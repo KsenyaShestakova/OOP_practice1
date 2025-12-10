@@ -1,17 +1,12 @@
 package org.example;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 
 import java.awt.Desktop;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
-import java.net.URLEncoder;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -69,8 +64,27 @@ public class WikipediaArticleSearch {
                                 System.out.println("Пожалуйста, введите корректный номер.");
                             }
                         }
-                    } catch (Exception ex) {
-                        System.out.println("Ошибка: " + ex.getMessage());
+                    } catch (IOException e) {
+                        if (e.getMessage().contains("403")) {
+                            System.err.println("Ошибка доступа (403): Сервер отклонил запрос. Возможно, требуется User-Agent.");
+                        } else if (e.getMessage().contains("404")) {
+                            System.err.println("Ошибка: Страница не найдена (404). Проверьте правильность запроса.");
+                        } else if (e.getMessage().contains("500")) {
+                            System.err.println("Ошибка: Проблема на стороне сервера Википедии (500).");
+                        } else if (e.getMessage().contains("timed out")) {
+                            System.err.println("Ошибка: Превышено время ожидания ответа от сервера.");
+                        } else {
+                            System.err.println("Ошибка сети: " + e.getMessage());
+                        }
+                    } catch (JsonSyntaxException e) {
+                        System.err.println("Ошибка: Не удалось обработать ответ от сервера. Некорректный формат данных.");
+                    } catch (URISyntaxException e) {
+                        System.err.println("Ошибка: Неправильный формат ссылки на статью.");
+                    } catch (IllegalArgumentException e) {
+                        System.err.println("Ошибка: " + e.getMessage());
+                    } catch (Exception e) {
+                        System.err.println("Неизвестная ошибка: " + e.getMessage());
+                        e.printStackTrace(); // Для отладки
                     }
                     break;
 
@@ -103,15 +117,12 @@ public class WikipediaArticleSearch {
         connection.setConnectTimeout(10000);
         connection.setReadTimeout(10000);
 
-        // ОБЯЗАТЕЛЬНЫЙ заголовок для Wikipedia API
         connection.setRequestProperty("User-Agent", "WikipediaSearchApp/1.0");
 
-        // Читаем ответ, даже если код не 200
         int responseCode = connection.getResponseCode();
         System.out.println("Код ответа: " + responseCode); // Для отладки
 
         if (responseCode != 200) {
-            // Читаем сообщение об ошибке
             BufferedReader errorReader = new BufferedReader(
                     new InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8));
             StringBuilder errorResponse = new StringBuilder();
@@ -136,7 +147,7 @@ public class WikipediaArticleSearch {
         return parseSearchResults(response.toString());
     }
 
-    private static List<SearchResult> parseSearchResults(String jsonResponse) { // ИСПРАВЛЕНО: было jsonFile
+    private static List<SearchResult> parseSearchResults(String jsonResponse) throws IOException { // ИСПРАВЛЕНО: было jsonFile
         List<SearchResult> results = new ArrayList<>();
 
         try {
@@ -153,8 +164,8 @@ public class WikipediaArticleSearch {
 
                 results.add(new SearchResult(pageId, title, snippet));
             }
-        } catch (Exception e) {
-            System.out.println("Ошибка при разборе ответа от Википедии: " + e.getMessage());
+        } catch (IllegalStateException | NullPointerException e) {
+            throw new JsonSyntaxException("Некорректный формат JSON ответа: " + e.getMessage(), e);
         }
 
         return results;
