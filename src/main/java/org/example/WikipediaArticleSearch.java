@@ -1,12 +1,17 @@
 package org.example;
 
-import com.google.gson.*;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import java.awt.Desktop;
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.*;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,57 +39,49 @@ public class WikipediaArticleSearch {
                         if (searchQuery.isEmpty()) {
                             System.out.println("Запрос не может быть пустым. Попробуйте снова.");
                             continue;
-                        } else {
-                            List<SearchResult> searchResults = searchWikipedia(searchQuery);
-                            if (searchResults.isEmpty()) {
-                                System.out.println("По вашему запросу ничего не найдено.");
-                                continue;
-                            }
+                        }
 
-                            System.out.println("Результаты поиска:\n");
-                            // ИСПРАВЛЕНО: было i <= searchResults.size()
-                            for (int i = 0; i < searchResults.size(); i++) {
-                                SearchResult result = searchResults.get(i);
-                                System.out.printf("%d. %s\n", i + 1, result.getTitle());
-                                System.out.println("   " + result.getSnippet() + "...");
-                            }
-                            System.out.print("\nВведите номер статьи для открытия (1-" + searchResults.size() + "): ");
+                        List<SearchResult> searchResults = searchWikipedia(searchQuery);
+
+                        if (searchResults.isEmpty()) {
+                            System.out.println("По вашему запросу ничего не найдено.");
+                            continue;
+                        }
+
+                        System.out.println("Результаты поиска:\n");
+                        for (int i = 0; i < searchResults.size(); i++) {
+                            SearchResult result = searchResults.get(i);
+                            System.out.printf("%d. %s\n", i + 1, result.getTitle());
+                            System.out.println("   " + (result.getSnippet().isEmpty() ?
+                                    "(нет описания)" : result.getSnippet()) + "...");
+                        }
+
+                        boolean articleSelected = false;
+                        while (!articleSelected) {
+                            System.out.print("\nВведите номер статьи для открытия (1-" +
+                                    searchResults.size() + "), или 0 для возврата: ");
                             String choiceInput = scanner.nextLine().trim();
 
                             try {
                                 int choice = Integer.parseInt(choiceInput);
-                                if (choice >= 1 && choice <= searchResults.size()) {
+
+                                if (choice == 0) {
+                                    break;
+                                } else if (choice < 0 || choice > searchResults.size()) {
+                                    System.out.println("Неверный номер. Пожалуйста, введите число от 1 до "
+                                            + searchResults.size() + " или 0 для возврата.");
+                                } else {
                                     SearchResult selectedResult = searchResults.get(choice - 1);
                                     openArticleInBrowser(selectedResult.getPageId());
                                     System.out.println("Открываю статью: " + selectedResult.getTitle());
-                                } else {
-                                    System.out.println("Неверный номер. Попробуйте снова.");
+                                    articleSelected = true;
                                 }
                             } catch (NumberFormatException e) {
-                                System.out.println("Пожалуйста, введите корректный номер.");
+                                System.out.println("Пожалуйста, введите корректное число.");
                             }
                         }
-                    } catch (IOException e) {
-                        if (e.getMessage().contains("403")) {
-                            System.err.println("Ошибка доступа (403): Сервер отклонил запрос. Возможно, требуется User-Agent.");
-                        } else if (e.getMessage().contains("404")) {
-                            System.err.println("Ошибка: Страница не найдена (404). Проверьте правильность запроса.");
-                        } else if (e.getMessage().contains("500")) {
-                            System.err.println("Ошибка: Проблема на стороне сервера Википедии (500).");
-                        } else if (e.getMessage().contains("timed out")) {
-                            System.err.println("Ошибка: Превышено время ожидания ответа от сервера.");
-                        } else {
-                            System.err.println("Ошибка сети: " + e.getMessage());
-                        }
-                    } catch (JsonSyntaxException e) {
-                        System.err.println("Ошибка: Не удалось обработать ответ от сервера. Некорректный формат данных.");
-                    } catch (URISyntaxException e) {
-                        System.err.println("Ошибка: Неправильный формат ссылки на статью.");
-                    } catch (IllegalArgumentException e) {
-                        System.err.println("Ошибка: " + e.getMessage());
                     } catch (Exception e) {
-                        System.err.println("Неизвестная ошибка: " + e.getMessage());
-                        e.printStackTrace(); // Для отладки
+                        System.out.println("Ошибка: " + e.getMessage());
                     }
                     break;
 
@@ -104,35 +101,20 @@ public class WikipediaArticleSearch {
     private static List<SearchResult> searchWikipedia(String query) throws Exception {
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.toString());
 
-        String urlString = String.format(
-                "%s?action=query&list=search&utf8=&format=json&srsearch=%s&srlimit=10",
-                WIKIPEDIA_API_URL, encodedQuery
-        );
-
-        System.out.println("Отправка запроса: " + urlString); // Для отладки
+        String urlString = String.format("%s?action=query&list=search&utf8=&format=json&srsearch=%s&srlimit=10",
+                WIKIPEDIA_API_URL, encodedQuery);
 
         URL url = new URL(urlString);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(10000);
         connection.setReadTimeout(10000);
-
         connection.setRequestProperty("User-Agent", "WikipediaSearchApp/1.0");
 
         int responseCode = connection.getResponseCode();
-        System.out.println("Код ответа: " + responseCode); // Для отладки
 
-        if (responseCode != 200) {
-            BufferedReader errorReader = new BufferedReader(
-                    new InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8));
-            StringBuilder errorResponse = new StringBuilder();
-            String line;
-            while ((line = errorReader.readLine()) != null) {
-                errorResponse.append(line);
-            }
-            errorReader.close();
-
-            throw new RuntimeException("Ошибка HTTP " + responseCode + ": " + errorResponse.toString());
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+            throw new Exception("Ошибка HTTP " + responseCode);
         }
 
         StringBuilder response = new StringBuilder();
@@ -147,31 +129,37 @@ public class WikipediaArticleSearch {
         return parseSearchResults(response.toString());
     }
 
-    private static List<SearchResult> parseSearchResults(String jsonResponse) throws IOException { // ИСПРАВЛЕНО: было jsonFile
+    private static List<SearchResult> parseSearchResults(String jsonResponse) {
         List<SearchResult> results = new ArrayList<>();
 
-        try {
-            JsonObject jsonObject = JsonParser.parseString(jsonResponse).getAsJsonObject();
-            JsonObject query = jsonObject.getAsJsonObject("query");
-            JsonArray search = query.getAsJsonArray("search");
+        JsonObject jsonObject = JsonParser.parseString(jsonResponse).getAsJsonObject();
+        JsonObject query = jsonObject.getAsJsonObject("query");
 
-            for (int i = 0; i < search.size(); i++) {
-                JsonObject item = search.get(i).getAsJsonObject();
+        if (!query.has("search")) {
+            return results;
+        }
 
-                int pageId = item.get("pageid").getAsInt();
-                String title = item.get("title").getAsString();
-                String snippet = cleanSnippet(item.get("snippet").getAsString());
+        JsonArray search = query.getAsJsonArray("search");
 
-                results.add(new SearchResult(pageId, title, snippet));
-            }
-        } catch (IllegalStateException | NullPointerException e) {
-            throw new JsonSyntaxException("Некорректный формат JSON ответа: " + e.getMessage(), e);
+        for (int i = 0; i < search.size(); i++) {
+            JsonObject item = search.get(i).getAsJsonObject();
+
+            int pageId = item.get("pageid").getAsInt();
+            String title = item.get("title").getAsString();
+            String snippet = item.has("snippet") ?
+                    cleanSnippet(item.get("snippet").getAsString()) : "";
+
+            results.add(new SearchResult(pageId, title, snippet));
         }
 
         return results;
     }
 
     private static String cleanSnippet(String snippet) {
+        if (snippet == null || snippet.isEmpty()) {
+            return "";
+        }
+
         String cleaned = snippet.replaceAll("<[^>]+>", "");
         cleaned = cleaned.replace("&quot;", "\"")
                 .replace("&amp;", "&")
@@ -181,19 +169,20 @@ public class WikipediaArticleSearch {
         return cleaned.trim();
     }
 
-    private static void openArticleInBrowser(int pageId) {
-        try {
-            String articleUrl = WIKIPEDIA_PAGE_URL + pageId;
-            URI uri = new URI(articleUrl);
+    private static void openArticleInBrowser(int pageId) throws Exception {
+        String articleUrl = WIKIPEDIA_PAGE_URL + pageId;
 
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(uri);
-            } else {
-                System.out.println("Не удалось открыть браузер. Ссылка на статью: " + articleUrl);
-            }
-        } catch (Exception e) {
-            System.out.println("Ошибка при открытии браузера: " + e.getMessage());
+        if (!Desktop.isDesktopSupported()) {
+            throw new Exception("Рабочий стол не поддерживается");
         }
+
+        Desktop desktop = Desktop.getDesktop();
+        if (!desktop.isSupported(Desktop.Action.BROWSE)) {
+            throw new Exception("Открытие браузера не поддерживается");
+        }
+
+        URI uri = new URI(articleUrl);
+        desktop.browse(uri);
     }
 
     private static class SearchResult {
@@ -203,12 +192,20 @@ public class WikipediaArticleSearch {
 
         public SearchResult(int pageId, String title, String snippet) {
             this.pageId = pageId;
-            this.title = title;
-            this.snippet = snippet;
+            this.title = title != null ? title : "";
+            this.snippet = snippet != null ? snippet : "";
         }
 
-        public int getPageId() { return pageId; }
-        public String getTitle() { return title; }
-        public String getSnippet() { return snippet; }
+        public int getPageId() {
+            return pageId;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public String getSnippet() {
+            return snippet;
+        }
     }
 }
