@@ -1,6 +1,5 @@
 package org.example;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -21,7 +20,6 @@ public class WikipediaArticleSearch {
 
     private static final String WIKIPEDIA_API_URL = "https://ru.wikipedia.org/w/api.php";
     private static final String WIKIPEDIA_PAGE_URL = "https://ru.wikipedia.org/w/index.php?curid=";
-    private static final Gson gson = new Gson();
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
